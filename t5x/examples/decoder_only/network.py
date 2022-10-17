@@ -38,6 +38,8 @@ class TransformerConfig:
   dropout_rate: float = 0.1
   # If `True`, the embedding weights are used in the decoder output layer.
   logits_via_embedding: bool = False
+  # Whether to accumulate attention logits in float32 regardless of dtype.
+  float32_attention_logits: bool = False
 
 
 class DecoderLayer(nn.Module):
@@ -86,6 +88,7 @@ class DecoderLayer(nn.Module):
         dtype=cfg.dtype,
         head_dim=cfg.head_dim,
         dropout_rate=cfg.dropout_rate,
+        float32_logits=cfg.float32_attention_logits,
         name='self_attention')(
             x,
             x,
