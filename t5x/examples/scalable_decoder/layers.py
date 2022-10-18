@@ -394,7 +394,7 @@ class MultiHeadDotProductAttention(nn.Module):
         DenseGeneral,
         axis=-1,
         features=(self.num_heads, self.head_dim),
-        kernel_axes=('embed', 'joined_kv'),
+        kernel_axes=('embed', 'heads', 'kv'),
         dtype=self.dtype)
 
     # NOTE: T5 does not explicitly rescale the attention logits by
@@ -551,7 +551,7 @@ class MultiHeadDotProductAttention(nn.Module):
         features=inputs_q.shape[-1],  # output dim is set to the input dim.
         axis=(-2, -1),
         kernel_init=self.kernel_init,
-        kernel_axes=('joined_kv', 'embed'),
+        kernel_axes=('heads', 'kv', 'embed'),
         dtype=self.dtype,
         name='out')(
             x)
