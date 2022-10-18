@@ -18,8 +18,15 @@ from typing import Any, Optional, Sequence
 
 from flax import linen as nn
 from flax import struct
+from flax.linen import partitioning as nn_partitioning
+import jax
 import jax.numpy as jnp
-from t5x.examples.decoder_only import layers
+from t5x.examples.scalable_decoder import layers
+
+with_sharding_constraint = nn_partitioning.with_sharding_constraint
+scan_with_axes = nn_partitioning.scan_with_axes
+remat = nn_partitioning.remat
+ScanIn = nn_partitioning.ScanIn
 
 
 @struct.dataclass
@@ -40,6 +47,10 @@ class TransformerConfig:
   logits_via_embedding: bool = False
   # Whether to accumulate attention logits in float32 regardless of dtype.
   float32_attention_logits: bool = False
+  # minimal, full, or none
+  remat_policy: str = 'none'
+  scan_layers: bool = True
+  param_scan_axis: int = 1
 
 
 class DecoderLayer(nn.Module):
@@ -77,12 +88,15 @@ class DecoderLayer(nn.Module):
         name='relpos_bias')(
             l, l, False, decode=decode)
 
+    
     # `inputs` is layer input with a shape [batch, length, emb_dim].
+    inputs = with_sharding_constraint(inputs, ('batch', 'length', 'embed'))
     x = layers.LayerNorm(
         dtype=cfg.dtype, name='pre_self_attention_layer_norm')(
             inputs)
-
+    x = with_sharding_constraint(x, ('batch', 'length', 'embed'))
     # Self-attention block
+    # [batch, length, emb_dim] -> [batch, length, emb_dim]
     x = layers.MultiHeadDotProductAttention(
         num_heads=cfg.num_heads,
         dtype=cfg.dtype,
@@ -104,9 +118,12 @@ class DecoderLayer(nn.Module):
         name='post_self_attention_dropout')(
             x, deterministic=deterministic)
     x = x + inputs
+    x = with_sharding_constraint(x, ('batch', 'length', 'embed'))
 
     # MLP block.
     y = layers.LayerNorm(dtype=cfg.dtype, name='pre_mlp_layer_norm')(x)
+    y = with_sharding_constraint(y, ('batch', 'length', 'embed'))
+    # [batch, length, emb_dim] -> [batch, length, emb_dim]
     y = layers.MlpBlock(
         intermediate_dim=cfg.mlp_dim,
         activations=cfg.mlp_activations,
@@ -118,13 +135,26 @@ class DecoderLayer(nn.Module):
         rate=cfg.dropout_rate, broadcast_dims=(-2,), name='post_mlp_dropout')(
             y, deterministic=deterministic)
     y = y + x
+    y = with_sharding_constraint(y, ('batch', 'length', 'embed'))
 
-    return y
+    if cfg.scan_layers:
+      return y, None
+    else:
+      return y
 
 
 class Decoder(nn.Module):
   """A stack of decoder layers."""
   config: TransformerConfig
+  # needed only for janky models.py scan_layers detection.
+  scan_layers: bool = struct.field(init=False)
+
+  def __post_init__(self):
+    super().__post_init__()
+    # needed only for janky models.py scan_layers detection.
+    object.__setattr__(self, 'scan_layers',
+                       object.__getattribute__(self, 'config').scan_layers)
+
 
   @nn.compact
   def __call__(self,
@@ -197,17 +227,52 @@ class Decoder(nn.Module):
             y, deterministic=deterministic)
     y = y.astype(cfg.dtype)
 
-    for lyr in range(cfg.num_layers):
-      # [batch, length, emb_dim] -> [batch, length, emb_dim]
-      y = DecoderLayer(
-          config=cfg, name=f'layers_{lyr}')(
-              y,
-              decoder_mask=decoder_mask,
-              deterministic=deterministic,
-              decode=decode,
-              max_decode_length=max_decode_length,
-              prefill=prefill,
-              prefill_lengths=prefill_lengths)
+
+    if cfg.remat_policy not in (None, 'none'):
+      if cfg.remat_policy == 'minimal':
+        policy = jax.checkpoint_policies.checkpoint_dots_with_no_batch_dims
+      else:
+        policy = None
+      DecoderLayer = remat( # pylint: disable=invalid-name
+          DecoderLayer,
+          prevent_cse=not cfg.scan_layers,
+          policy=policy,
+          static_argnums=(3,4,) # TODO: check if these are the right ones
+      )
+    if cfg.scan_layers:
+      initializing = self.is_mutable_collection('params')
+      params_spec = (
+          cfg.param_scan_axis if initializing else ScanIn(cfg.param_scan_axis))
+      cache_spec = 0
+      y, _ = scan_with_axes(
+          DecoderLayer,
+          variable_axes={
+              'params': params_spec,
+              'cache': cache_spec
+          },
+          split_rngs={
+              'params': True,
+              'dropout': True
+          },
+          in_axes=(nn.broadcast, nn.broadcast, nn.broadcast, nn.broadcast,
+                   nn.broadcast, nn.broadcast),
+          length=cfg.num_decoder_layers,
+          axis_name='layers')(
+              config=cfg,
+              name='decoder')(y, decoder_mask, deterministic, 
+                decode, max_decode_length, prefill, prefill_lengths)
+    else:
+      for lyr in range(cfg.num_layers):
+        # [batch, length, emb_dim] -> [batch, length, emb_dim]
+        y = DecoderLayer(
+            config=cfg, name=f'layers_{lyr}')(
+                y,
+                decoder_mask=decoder_mask,
+                deterministic=deterministic,
+                decode=decode,
+                max_decode_length=max_decode_length,
+                prefill=prefill,
+                prefill_lengths=prefill_lengths)
 
     y = layers.LayerNorm(dtype=cfg.dtype, name='decoder_norm')(y)
     y = nn.Dropout(

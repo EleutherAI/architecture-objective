@@ -46,6 +46,8 @@ class T5Config:
   dropout_rate: float = 0.1
   # If `True`, the embedding weights are used in the decoder output layer.
   logits_via_embedding: bool = False
+  # Whether to accumulate attention logits in float32 regardless of dtype.
+  float32_attention_logits: bool = False
   # minimal, full, or none
   remat_policy: str = 'none'
   scan_layers: bool = True
@@ -83,6 +85,7 @@ class EncoderLayer(nn.Module):
         dtype=cfg.dtype,
         head_dim=cfg.head_dim,
         dropout_rate=cfg.dropout_rate,
+        float32_logits=cfg.float32_attention_logits,
         name='attention')(
             x, x, encoder_mask, encoder_bias, deterministic=deterministic)
     x = nn.Dropout(
@@ -154,6 +157,7 @@ class DecoderLayer(nn.Module):
         dtype=cfg.dtype,
         head_dim=cfg.head_dim,
         dropout_rate=cfg.dropout_rate,
+        float32_logits=cfg.float32_attention_logits,
         name='self_attention')(
             x,
             x,
@@ -177,6 +181,7 @@ class DecoderLayer(nn.Module):
         dtype=cfg.dtype,
         head_dim=cfg.head_dim,
         dropout_rate=cfg.dropout_rate,
+        float32_logits=cfg.float32_attention_logits,
         name='encoder_decoder_attention')(
             y, encoded, encoder_decoder_mask, deterministic=deterministic)
     y = nn.Dropout(
