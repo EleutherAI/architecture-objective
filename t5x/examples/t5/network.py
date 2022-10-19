@@ -46,14 +46,14 @@ class T5Config:
 class EncoderLayer(nn.Module):
   """Transformer encoder layer."""
   config: T5Config
-  relative_embedding: nn.Module
+  position_embedding: nn.Module
 
   @nn.compact
   def __call__(self, inputs, encoder_mask=None, deterministic=False):
     cfg = self.config
 
     # Relative position embedding as attention biases.
-    encoder_bias = self.relative_embedding(inputs.shape[-2], inputs.shape[-2],
+    encoder_bias = self.position_embedding(inputs.shape[-2], inputs.shape[-2],
                                            True)
 
     # Attention block.
@@ -96,7 +96,7 @@ class EncoderLayer(nn.Module):
 class DecoderLayer(nn.Module):
   """Transformer decoder layer that attends to the encoder."""
   config: T5Config
-  relative_embedding: nn.Module
+  position_embedding: nn.Module
 
   @nn.compact
   def __call__(self,
@@ -111,7 +111,7 @@ class DecoderLayer(nn.Module):
 
     # Relative position embedding as attention biases.
     l = max_decode_length if decode and max_decode_length else inputs.shape[-2]
-    decoder_bias = self.relative_embedding(l, l, False)
+    decoder_bias = self.position_embedding(l, l, False)
 
     # inputs: embedded inputs to the decoder with shape [batch, length, emb_dim]
     x = layers.LayerNorm(
@@ -202,7 +202,7 @@ class Encoder(nn.Module):
     for lyr in range(cfg.num_encoder_layers):
       # [batch, length, emb_dim] -> [batch, length, emb_dim]
       x = EncoderLayer(
-          config=cfg, relative_embedding=rel_emb,
+          config=cfg, position_embedding=rel_emb,
           name=f'layers_{lyr}')(x, encoder_mask, deterministic)
 
     x = layers.LayerNorm(dtype=cfg.dtype, name='encoder_norm')(x)
@@ -245,7 +245,7 @@ class Decoder(nn.Module):
     for lyr in range(cfg.num_decoder_layers):
       # [batch, length, emb_dim] -> [batch, length, emb_dim]
       y = DecoderLayer(
-          config=cfg, relative_embedding=rel_emb, name=f'layers_{lyr}')(
+          config=cfg, position_embedding=rel_emb, name=f'layers_{lyr}')(
               y,
               encoded,
               decoder_mask=decoder_mask,
