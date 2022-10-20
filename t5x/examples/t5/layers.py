@@ -635,6 +635,14 @@ class RelativePositionBiases(nn.Module):
     return values[jnp.newaxis, ...]
 
 
+class AliBiPositionBiases(nn.Module):
+  """Adds AliBi positional embeddings to the attention logits.
+
+  Attributes:
+    Attribute
+  """
+
+
 #------------------------------------------------------------------------------
 # T5 Layernorm - no subtraction of mean or bias.
 #------------------------------------------------------------------------------

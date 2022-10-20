@@ -183,14 +183,18 @@ class Encoder(nn.Module):
                deterministic=False):
     cfg = self.config
     assert encoder_input_tokens.ndim == 2  # [batch, length]
-    rel_emb = layers.RelativePositionBiases(
-        num_buckets=32,
-        max_distance=128,
-        num_heads=cfg.num_heads,
-        dtype=cfg.dtype,
-        embedding_init=nn.initializers.variance_scaling(1.0, 'fan_avg',
-                                                        'uniform'),
-        name='relpos_bias')
+
+    if position_embedding == "relative":
+        rel_emb = layers.RelativePositionBiases(
+            num_buckets=32,
+            max_distance=128,
+            num_heads=cfg.num_heads,
+            dtype=cfg.dtype,
+            embedding_init=nn.initializers.variance_scaling(1.0, 'fan_avg',
+                                                            'uniform'),
+            name='relpos_bias')
+    elif position_embedding == "alibi":
+        rel_emb = layers.AliBiPositionBiases()
 
     # [batch, length] -> [batch, length, emb_dim]
     x = self.shared_embedding(encoder_input_tokens.astype('int32'))
