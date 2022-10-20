@@ -41,6 +41,7 @@ class T5Config:
   logits_via_embedding: bool = False
   # Whether to accumulate attention logits in float32 regardless of dtype.
   float32_attention_logits: bool = False
+  position_embedding: str = 'relative'
 
 
 class EncoderLayer(nn.Module):
@@ -184,7 +185,7 @@ class Encoder(nn.Module):
     cfg = self.config
     assert encoder_input_tokens.ndim == 2  # [batch, length]
 
-    if position_embedding == "relative":
+    if cfg.position_embedding == 'relative':
         rel_emb = layers.RelativePositionBiases(
             num_buckets=32,
             max_distance=128,
@@ -193,8 +194,11 @@ class Encoder(nn.Module):
             embedding_init=nn.initializers.variance_scaling(1.0, 'fan_avg',
                                                             'uniform'),
             name='relpos_bias')
-    elif position_embedding == "alibi":
-        rel_emb = layers.AliBiPositionBiases()
+    elif cfg.position_embedding == 'alibi':
+        rel_emb = layers.ALiBiPositionBiases(
+            num_heads=cfg.num_heads,
+            dtype=cfg.dtype,
+            name='alibipos_bias')
 
     # [batch, length] -> [batch, length, emb_dim]
     x = self.shared_embedding(encoder_input_tokens.astype('int32'))
@@ -230,14 +234,21 @@ class Decoder(nn.Module):
                max_decode_length=None):
     cfg = self.config
     assert decoder_input_tokens.ndim == 2  # [batch, len]
-    rel_emb = layers.RelativePositionBiases(
-        num_buckets=32,
-        max_distance=128,
-        num_heads=cfg.num_heads,
-        dtype=cfg.dtype,
-        embedding_init=nn.initializers.variance_scaling(1.0, 'fan_avg',
-                                                        'uniform'),
-        name='relpos_bias')
+    
+    if cfg.position_embedding == 'relative':
+        rel_emb = layers.RelativePositionBiases(
+            num_buckets=32,
+            max_distance=128,
+            num_heads=cfg.num_heads,
+            dtype=cfg.dtype,
+            embedding_init=nn.initializers.variance_scaling(1.0, 'fan_avg',
+                                                            'uniform'),
+            name='relpos_bias')
+    elif cfg.position_embedding == 'alibi':
+        rel_emb = layers.ALiBiPositionBiases(
+            num_heads=cfg.num_heads,
+            dtype=cfg.dtype,
+            name='alibipos_bias')
 
     # [batch, length] -> [batch, length, emb_dim]
     y = self.shared_embedding(decoder_input_tokens.astype('int32'))
