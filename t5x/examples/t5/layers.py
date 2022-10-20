@@ -674,23 +674,29 @@ class ALiBiPositionBiases(nn.Module):
     """
     context_position = np.arange(qlen, dtype=jnp.int32)[:, None]
     memory_position = np.arange(klen, dtype=jnp.int32)[None, :]
-    relative_position = memory_position - context_position  # shape (qlen, klen)
+
+    # Constant bias
+    #  0, ...
+    # -1, 0, ...
+    # -2, -1, 0, ...
+    # -3, -2, -1, 0, ...
+    # -4, -3, -2, -1, 0, ...
+    # ...
+    constant_bias = memory_position - context_position  # shape (qlen, klen)
 
     # head-specific scalar
     slopes = jnp.asarray(self._get_slopes(self.num_heads), dtype=self.dtype)
 
-    bcast_iota = lax.broadcasted_iota(jnp.int32, (self.num_heads, 1, 1), 0)
-
-    rp_bucket_one_hot = jnp.array(
-        relative_position[jnp.newaxis, ...] == bcast_iota, dtype=self.dtype)
-
-    # --> shape (qlen, klen, num_heads)
+    # --> shape (num_heads, qlen, klen)
     values = lax.dot_general(
         slopes
-        relative_position,
+        constant_bias,
         (
-            ((1,), (0,)),  # rhs, lhs contracting dims
-            ((), ())))  # no batched dims
+          ((),()),
+          ((),())
+          )
+      )  # no batched dims
+
     # Add a singleton batch dimension.
     # --> shape (1, num_heads, qlen, klen)
     return values[jnp.newaxis, ...]
