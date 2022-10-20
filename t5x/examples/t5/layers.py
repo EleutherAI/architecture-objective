@@ -29,6 +29,8 @@ from jax import random
 import jax.numpy as jnp
 import numpy as np
 
+import math
+
 
 # from flax.linen.partitioning import param_with_axes, with_sharding_constraint
 param_with_axes = nn_partitioning.param_with_axes
@@ -635,13 +637,63 @@ class RelativePositionBiases(nn.Module):
     return values[jnp.newaxis, ...]
 
 
-class AliBiPositionBiases(nn.Module):
-  """Adds AliBi positional embeddings to the attention logits.
+class ALiBiPositionBiases(nn.Module):
+  """Adds ALiBi positional embeddings to the attention logits.
 
   Attributes:
     Attribute
   """
+  num_heads: int
+  dtype: Any
 
+  @staticmethod
+  def _get_slopes(n):
+      def get_slopes_power_of_2(n):
+          start = (2 ** (-2 ** -(math.log2(n) - 3)))
+          ratio = start
+          return [start * ratio ** i for i in range(n)]
+
+      if math.log2(n).is_integer():
+          return get_slopes_power_of_2(n)
+      else:
+          closest_power_of_2 = 2 ** math.floor(math.log2(n))
+          return get_slopes_power_of_2(closest_power_of_2) + \
+            get_slopes(2 * closest_power_of_2)[0::2][:n - closest_power_of_2]
+
+
+  @nn.compact
+  def __call__(self, qlen, klen):
+    """Produce ALiBi
+    
+    Args:
+      qlen:
+      klen:
+
+    Returns:
+      output:
+    """
+    context_position = np.arange(qlen, dtype=jnp.int32)[:, None]
+    memory_position = np.arange(klen, dtype=jnp.int32)[None, :]
+    relative_position = memory_position - context_position  # shape (qlen, klen)
+
+    # head-specific scalar
+    slopes = jnp.asarray(self._get_slopes(self.num_heads), dtype=self.dtype)
+
+    bcast_iota = lax.broadcasted_iota(jnp.int32, (self.num_heads, 1, 1), 0)
+
+    rp_bucket_one_hot = jnp.array(
+        relative_position[jnp.newaxis, ...] == bcast_iota, dtype=self.dtype)
+
+    # --> shape (qlen, klen, num_heads)
+    values = lax.dot_general(
+        slopes
+        relative_position,
+        (
+            ((1,), (0,)),  # rhs, lhs contracting dims
+            ((), ())))  # no batched dims
+    # Add a singleton batch dimension.
+    # --> shape (1, num_heads, qlen, klen)
+    return values[jnp.newaxis, ...]
 
 #------------------------------------------------------------------------------
 # T5 Layernorm - no subtraction of mean or bias.
