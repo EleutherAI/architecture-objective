@@ -54,8 +54,11 @@ class EncoderLayer(nn.Module):
     cfg = self.config
 
     # Relative position embedding as attention biases.
-    encoder_bias = self.position_embedding(inputs.shape[-2], inputs.shape[-2],
-                                           True)
+    if cfg.position_embedding == 'relative':
+        args = [inputs.shape[-2], inputs.shape[-2], True]
+    elif cfg.position_embedding == 'alibi':
+        args = [inputs.shape[-2], inputs.shape[-2]]
+    encoder_bias = self.position_embedding(*args)
 
     # Attention block.
     assert inputs.ndim == 3
@@ -112,7 +115,11 @@ class DecoderLayer(nn.Module):
 
     # Relative position embedding as attention biases.
     l = max_decode_length if decode and max_decode_length else inputs.shape[-2]
-    decoder_bias = self.position_embedding(l, l, False)
+    if cfg.position_embedding == 'relative':
+        args = [l, l, False]
+    elif cfg.position_embedding == 'alibi':
+        args = [l, l]
+    decoder_bias = self.position_embedding(*args)
 
     # inputs: embedded inputs to the decoder with shape [batch, length, emb_dim]
     x = layers.LayerNorm(

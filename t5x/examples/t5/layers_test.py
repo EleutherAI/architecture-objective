@@ -616,5 +616,26 @@ class RelativePositionBiasesTest(absltest.TestCase):
     self.assertAlmostEqual(outputs[0, 2, 4, 6], 0.39296466, places=5)
 
 
+class ALiBiPositionBiasesTest(absltest.TestCase):
+
+  def setUp(self):
+    self.num_heads = 2
+    self.query_len = 3
+    self.key_len = 4
+    self.alibi_attention = layers.ALiBiPositionBiases(
+        num_heads=self.num_heads,
+        dtype=jnp.float32,
+    )
+    super(ALiBiPositionBiasesTest, self).setUp()
+
+  def test_alibi_attention_shape(self):
+    """Tests that ALiBi position biases have expected shapes."""
+    outputs, params = self.alibi_attention.init_with_output(
+        random.PRNGKey(0), self.query_len, self.key_len)
+
+    self.assertEqual(outputs.shape, 
+                      (1, self.num_heads, self.query_len, self.key_len))
+
+
 if __name__ == '__main__':
   absltest.main()

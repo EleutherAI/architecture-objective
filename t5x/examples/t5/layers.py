@@ -646,21 +646,6 @@ class ALiBiPositionBiases(nn.Module):
   num_heads: int
   dtype: Any
 
-  @staticmethod
-  def _get_slopes(n):
-      def get_slopes_power_of_2(n):
-          start = (2 ** (-2 ** -(math.log2(n) - 3)))
-          ratio = start
-          return [start * ratio ** i for i in range(n)]
-
-      if math.log2(n).is_integer():
-          return get_slopes_power_of_2(n)
-      else:
-          closest_power_of_2 = 2 ** math.floor(math.log2(n))
-          return get_slopes_power_of_2(closest_power_of_2) + \
-            get_slopes(2 * closest_power_of_2)[0::2][:n - closest_power_of_2]
-
-
   @nn.compact
   def __call__(self, qlen, klen):
     """Produce ALiBi
@@ -672,10 +657,24 @@ class ALiBiPositionBiases(nn.Module):
     Returns:
       output:
     """
-    context_position = np.arange(qlen, dtype=jnp.int32)[:, None]
-    memory_position = np.arange(klen, dtype=jnp.int32)[None, :]
 
-    # Constant bias
+    def _get_slopes(n):
+        def _get_slopes_power_of_2(n):
+            start = (2 ** (-2 ** -(math.log2(n) - 3)))
+            ratio = start
+            return [start * ratio ** i for i in range(n)]
+
+        if math.log2(n).is_integer():
+            return _get_slopes_power_of_2(n)
+        else:
+            closest_power_of_2 = 2 ** math.floor(math.log2(n))
+            return _get_slopes_power_of_2(closest_power_of_2) + \
+              _get_slopes(2 * closest_power_of_2)[0::2][:n - closest_power_of_2]
+
+    context_position = np.arange(qlen, dtype=self.dtype)[:, None]
+    memory_position = np.arange(klen, dtype=self.dtype)[None, :]
+
+    # Constant Bias
     #  0, ...
     # -1, 0, ...
     # -2, -1, 0, ...
@@ -685,11 +684,10 @@ class ALiBiPositionBiases(nn.Module):
     constant_bias = memory_position - context_position  # shape (qlen, klen)
 
     # head-specific scalar
-    slopes = jnp.asarray(self._get_slopes(self.num_heads), dtype=self.dtype)
-
+    slopes = jnp.asarray(_get_slopes(self.num_heads), dtype=self.dtype)
     # --> shape (num_heads, qlen, klen)
     values = lax.dot_general(
-        slopes
+        slopes,
         constant_bias,
         (
           ((),()),
