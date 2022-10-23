@@ -671,9 +671,6 @@ class ALiBiPositionBiases(nn.Module):
             return _get_slopes_power_of_2(closest_power_of_2) + \
               _get_slopes(2 * closest_power_of_2)[0::2][:n - closest_power_of_2]
 
-    context_position = np.arange(qlen, dtype=self.dtype)[:, None]
-    memory_position = np.arange(klen, dtype=self.dtype)[None, :]
-
     # Constant Bias
     #  0, ...
     # -1, 0, ...
@@ -681,7 +678,9 @@ class ALiBiPositionBiases(nn.Module):
     # -3, -2, -1, 0, ...
     # -4, -3, -2, -1, 0, ...
     # ...
-    constant_bias = memory_position - context_position  # shape (qlen, klen)
+    context_position = np.arange(qlen, dtype=self.dtype)[:, None]
+    memory_position = np.arange(klen, dtype=self.dtype)[None, :]
+    constant_bias = jnp.tril(memory_position - context_position)  # shape (qlen, klen)
 
     # head-specific scalar
     slopes = jnp.asarray(_get_slopes(self.num_heads), dtype=self.dtype)
