@@ -1,0 +1,23 @@
+# Register necessary SeqIO Tasks/Mixtures.
+from __gin__ import dynamic_registration
+import __main__ as train_script
+
+import seqio
+from t5x import utils
+from t5x.examples.t5 import network
+
+include 't5x/examples/t5/t5_1_1/base.gin'
+include 't5x/configs/runs/eval.gin'
+
+# import task module
+import t5x.data.tasks
+
+# MODEL_DIR = "gs://t5x-test/ckpts/benchmark/base_c4_regular_alibi"
+MIXTURE_OR_TASK_NAME = "c4_eye_span_corruption"
+CHECKPOINT_PATH = 
+EVAL_OUTPUT_DIR = 
+TASK_FEATURE_LENGTHS = {"inputs": 512, "targets": 114}
+
+VOCABULARY = @seqio.SentencePieceVocabulary()
+seqio.SentencePieceVocabulary.sentencepiece_model_file = "/fsx/lintangsutawika/t5-tokenizer/spiece.model"
+seqio.SentencePieceVocabulary.extra_ids = 0
