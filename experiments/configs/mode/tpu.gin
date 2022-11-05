@@ -1,0 +1,9 @@
+from __gin__ import dynamic_registration
+
+import seqio
+
+from t5x import data
+
+VOCABULARY = @seqio.SentencePieceVocabulary()
+seqio.SentencePieceVocabulary.sentencepiece_model_file = "gs://t5-data/vocabs/cc_all.32000/sentencepiece.model"
+seqio.SentencePieceVocabulary.extra_ids = 100
