@@ -1,19 +1,44 @@
-import functools
+"""
+To cache tasks before training,
+
+seqio_cache_tasks \
+    --tasks=my_task_*,your_task \
+    --excluded_tasks=my_task_5 \
+    --output_cache_dir=/path/to/cache_dir \
+    --module_import=my.tasks \
+    --alsologtostderr
+
+For more details, see: seqio/scripts/cache_tasks_main.py
+
+"""
 
 import seqio
+import functools
+
+from t5.evaluation import metrics
+from t5.data import preprocessors
+from t5.data import postprocessors
+from t5.data.glue_utils import (
+    get_glue_postprocess_fn, 
+    get_glue_text_preprocessor, 
+    get_super_glue_metric, 
+    get_super_glue_weight_mapping, 
+    get_super_glue_weight_mapping_sentinel
+)
+
+import tensorflow_datasets as tfds
 
 import t5x.data.vocab
 import t5x.data.utils
 
-from t5.data import preprocessors
-
 from t5x.data import c4_utils
 from t5x.data import p3_utils
+# from t5x.data import sglue_utils
 
-from flan import tasks as flan_tasks
-from flan import utils as flan_utils
-from flan import templates as flan_templates
-from flan import preprocessors as flan_preprocessors
+# from flan import tasks as flan_tasks
+# from flan import utils as flan_utils
+# from flan import templates as flan_templates
+# from flan import preprocessors as flan_preprocessors
 
 
 TaskRegistry = seqio.TaskRegistry
@@ -57,44 +82,158 @@ TaskRegistry.add(
 
 
 # ==================================== Super GLUE ======================================
-# Adapted from FLAN
+# Original T5 SGLUE
+for b in tfds.text.super_glue.SuperGlue.builder_configs.values():
+    # We use a simplified version of WSC, defined below
+    if "wsc" in b.name:
+        continue
+    if b.name == "axb":
+        glue_preprocessors = [
+            functools.partial(
+                preprocessors.rekey,
+                key_map={
+                    "premise": "sentence1",
+                    "hypothesis": "sentence2",
+                    "label": "label",
+                    "idx": "idx",
+                }),
+            get_glue_text_preprocessor(b),
+            seqio.preprocessors.tokenize,
+            seqio.CacheDatasetPlaceholder(),
+            seqio.preprocessors.append_eos_after_trim,
+        ]
+    else:
+        glue_preprocessors = [
+            get_glue_text_preprocessor(b),
+            seqio.preprocessors.tokenize,
+            seqio.CacheDatasetPlaceholder(),
+            seqio.preprocessors.append_eos_after_trim,
+        ]
+    TaskRegistry.add(
+        "super_glue_%s_v102" % b.name,
+        source=seqio.TfdsDataSource(
+            tfds_name="super_glue/%s:1.0.2" % b.name,
+            splits=["test"] if b.name in ["axb", "axg"] else None),
+        preprocessors=glue_preprocessors,
+        metric_fns=get_super_glue_metric(b.name),
+        output_features=DEFAULT_OUTPUT_FEATURES,
+        postprocess_fn=get_glue_postprocess_fn(b))
 
-SGLUE_LIST = ['rte', 'wsc', 'wic', 'record', 'multirc', 'copa', 'cb']
-SGLUE_SUBSET = []
-for task_name in SGLUE_LIST:
-    config = flan_tasks.TASK_CONFIGS[task_name]
-    flan_name = flan_utils.t_name_to_flan_pattern_name(task_name)
-    for idx, pattern in enumerate(flan_templates.PATTERNS[flan_name]):
-        inputs_pattern, targets_pattern = pattern
+    # Create SuperGLUE tasks with 1 sentinel token added.
+    seqio.experimental.add_task_with_sentinels(
+        "super_glue_%s_v102" % b.name, num_sentinels=1
+        )
 
-        # task_and_id_name = flan_utils.ZeroshotEvalTaskName.get(task_name, idx)
-        task_and_id_name = "{}_prompt_{}".format(task_name, idx)
-        SGLUE_SUBSET.append(task_and_id_name)
-        TaskRegistry.add(
-            task_and_id_name,
-            source=config.source,
-            preprocessors=config.preprocessors + 
-                flan_preprocessors.get_flan_formatter(inputs_pattern, targets_pattern) +
-                [
-                    seqio.preprocessors.tokenize,
-                    seqio.CacheDatasetPlaceholder(),
-                    seqio.preprocessors.append_eos_after_trim,
-                ],
-            postprocess_fn=config.postprocess_fn,
-            output_features=DEFAULT_OUTPUT_FEATURES,
-            metric_fns=config.metric_fns
-    )
+# ======================== Definite Pronoun Resolution =========================
+TaskRegistry.add(
+    "dpr_v001_simple",
+    source=seqio.TfdsDataSource(tfds_name="definite_pronoun_resolution:1.1.0"),
+    preprocessors=[
+        preprocessors.definite_pronoun_resolution_simple,
+        seqio.preprocessors.tokenize,
+        seqio.CacheDatasetPlaceholder(),
+        seqio.preprocessors.append_eos_after_trim,
+    ],
+    metric_fns=[metrics.accuracy],
+    output_features=DEFAULT_OUTPUT_FEATURES)
+
+# Create SuperGLUE tasks with 1 sentinel token added.
+seqio.experimental.add_task_with_sentinels("dpr_v001_simple", num_sentinels=1)
+
+# =================================== WSC ======================================
+TaskRegistry.add(
+    "super_glue_wsc_v102_simple_train",
+    source=seqio.TfdsDataSource(
+        tfds_name="super_glue/wsc.fixed:1.0.2", splits=["train"]),
+    preprocessors=[
+        functools.partial(preprocessors.wsc_simple, correct_referent_only=True),
+        seqio.preprocessors.tokenize,
+        seqio.CacheDatasetPlaceholder(),
+        seqio.preprocessors.append_eos_after_trim,
+    ],
+    metric_fns=[],
+    output_features=DEFAULT_OUTPUT_FEATURES)
+
+# Create SuperGLUE tasks with 1 sentinel token added.
+seqio.experimental.add_task_with_sentinels("super_glue_wsc_v102_simple_train",
+                                           num_sentinels=1)
+
+TaskRegistry.add(
+    "super_glue_wsc_v102_simple_eval",
+    source=seqio.TfdsDataSource(
+        tfds_name="super_glue/wsc.fixed:1.0.2", splits=["validation", "test"]),
+    preprocessors=[
+        functools.partial(
+            preprocessors.wsc_simple, correct_referent_only=False),
+        seqio.preprocessors.tokenize,
+        seqio.CacheDatasetPlaceholder(),
+        seqio.preprocessors.append_eos_after_trim,
+    ],
+    postprocess_fn=postprocessors.wsc_simple,
+    metric_fns=[metrics.accuracy],
+    output_features=DEFAULT_OUTPUT_FEATURES)
+# Create SuperGLUE tasks with 1 sentinel token added.
+seqio.experimental.add_task_with_sentinels("super_glue_wsc_v102_simple_eval",
+                                           num_sentinels=1)
+
+_SUPER_GLUE_WEIGHT_MAPPING = get_super_glue_weight_mapping()
+_SUPER_GLUE_WEIGHT_MAPPING_SENTINEL = get_super_glue_weight_mapping_sentinel()
+
+_super_glue_tasks_with_weight = list(_SUPER_GLUE_WEIGHT_MAPPING.items())
+_super_glue_tasks_with_weight_sentinel = list(
+    _SUPER_GLUE_WEIGHT_MAPPING_SENTINEL.items())
 
 MixtureRegistry.add(
-  name="sglue_flan_style",
-  tasks=SGLUE_SUBSET,
-  default_rate=functools.partial(seqio.mixing_rate_num_examples) #, maximum=3000)
-  )
+    "super_glue_v102_proportional",
+    _super_glue_tasks_with_weight
+)
+
+MixtureRegistry.add(
+    "super_glue_v102_proportional_sentinel",
+    _super_glue_tasks_with_weight_sentinel
+)
+
+# Adapted from FLAN
+# SGLUE_LIST = ['rte', 'wsc', 'wic', 'record', 'multirc', 'copa', 'cb']
+# SGLUE_SUBSET = []
+# for task_name in SGLUE_LIST:
+#     config = flan_tasks.TASK_CONFIGS[task_name]
+#     flan_name = flan_utils.t_name_to_flan_pattern_name(task_name)
+#     for idx, pattern in enumerate(flan_templates.PATTERNS[flan_name]):
+#         inputs_pattern, targets_pattern = pattern
+
+#         # task_and_id_name = flan_utils.ZeroshotEvalTaskName.get(task_name, idx)
+#         task_and_id_name = "{}_prompt_{}".format(task_name, idx)
+#         SGLUE_SUBSET.append(task_and_id_name)
+#         TaskRegistry.add(
+#             task_and_id_name,
+#             source=config.source,
+#             preprocessors=config.preprocessors + 
+#                 flan_preprocessors.get_flan_formatter(inputs_pattern, targets_pattern) +
+#                 [
+#                     seqio.preprocessors.tokenize,
+#                     seqio.CacheDatasetPlaceholder(),
+#                     seqio.preprocessors.append_eos_after_trim,
+#                 ],
+#             postprocess_fn=config.postprocess_fn,
+#             output_features=DEFAULT_OUTPUT_FEATURES,
+#             metric_fns=config.metric_fns
+#     )
+
+# MixtureRegistry.add(
+#   name="sglue_flan_style",
+#   tasks=SGLUE_SUBSET,
+#   default_rate=functools.partial(seqio.mixing_rate_num_examples) #, maximum=3000)
+#   )
 
 
 # ==================================== P3 ======================================
 # Adapted from T-Zero
 
+# 3 stages of training/ablation: D4 -> GPT -> SuperGLUE
+t0_train_mixture = {key: [] for key in p3_utils.t0_train}
+t0_eval_mixture = {key: [] for key in p3_utils.t0_eval}
+mixture_cap = {}
 for dataset_name, subset_name in p3_utils.all_templates.keys:
     if (dataset_name, subset_name) not in p3_utils.all_datasets:
         p3_utils.all_templates.remove(dataset_name, subset_name)
@@ -106,7 +245,7 @@ for dataset_name, subset_name in p3_utils.all_templates.keys:
     for template_name in dataset.all_template_names:
         # Add train and normal eval tasks
         template = p3_utils.all_templates.get_dataset(dataset_name, subset_name)[template_name]
-        task_name = p3_utils.get_task_name(dataset_name, subset_name, template_name)
+        task_name = "p3_"+p3_utils.get_task_name(dataset_name, subset_name, template_name)
         TaskRegistry.add(
             name=task_name,
             source=p3_utils.get_p3_source(dataset_name, subset_name, template_name),
@@ -140,33 +279,33 @@ for dataset_name, subset_name in p3_utils.all_templates.keys:
         #         postprocess_fn=t5.data.postprocessors.rank_classification,
         #     )
 
-        # # Check that the dataset_subset_tuple is in t0_train
-        # for key, dataset_subset_tuples in p3_utils.t0_train.items():
-        #     if (dataset_name, subset_name) in dataset_subset_tuples:
-        #         t0_train_mixture[key].append(task_name)
-        #         mixture_cap[task_name] = cap
+        # Check that the dataset_subset_tuple is in t0_train
+        for key, dataset_subset_tuples in p3_utils.t0_train.items():
+            if (dataset_name, subset_name) in dataset_subset_tuples:
+                t0_train_mixture[key].append(task_name)
+                mixture_cap[task_name] = cap
 
 
 MixtureRegistry.add(
     "t0_train",
-    [task for task in p3_utils.t0_train_mixture["BASE"] \
+    [task for task in t0_train_mixture["BASE"] \
                         if task not in p3_utils.TASK_BLACKLIST],
-    default_rate=lambda t: p3_utils.mixture_cap[t.name],
+    default_rate=lambda t: mixture_cap[t.name],
 )
 
 MixtureRegistry.add(
     "t0+_train",
-    [task for task in p3_utils.t0_train_mixture["BASE"] \
-                    + p3_utils.t0_train_mixture["GPT_EVAL"] 
+    [task for task in t0_train_mixture["BASE"] \
+                    + t0_train_mixture["GPT_EVAL"] 
                         if task not in p3_utils.TASK_BLACKLIST],
     default_rate=lambda t: p3_utils.mixture_cap[t.name],
 )
 
 MixtureRegistry.add(
     "t0++_train",
-    [task for task in p3_utils.t0_train_mixture["BASE"] \
-                    + p3_utils.t0_train_mixture["GPT_EVAL"] \
-                    + p3_utils.t0_train_mixture["SGLUE"] \
+    [task for task in t0_train_mixture["BASE"] \
+                    + t0_train_mixture["GPT_EVAL"] \
+                    + t0_train_mixture["SGLUE"] \
                         if task not in p3_utils.TASK_BLACKLIST],
     default_rate=lambda t: p3_utils.mixture_cap[t.name],
 )
