@@ -13,12 +13,11 @@ import t5x.data.tasks
 
 # MODEL_DIR = "gs://t5x-test/ckpts/benchmark/base_sglue_flan_regular"
 # INITIAL_CHECKPOINT_PATH = 
-# MIXTURE_OR_TASK_NAME = "t0_train"
-MIXTURE_OR_TASK_NAME = "trivia_qa_unfiltered_first_person_context"
+MIXTURE_OR_TASK_NAME = "t0_train"
 TASK_FEATURE_LENGTHS = {"inputs": 1024, "targets": 256}
-TRAIN_STEPS = 12500
+TRAIN_STEPS = 1_012_500
 EVAL_PERIOD = 2500
-BATCH_SIZE = 32
+BATCH_SIZE = 1024
 SEED = 42
 
 
