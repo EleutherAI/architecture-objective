@@ -9,10 +9,8 @@ include 't5x/examples/t5/t5_1_1/base.gin'
 include 't5x/configs/runs/finetune.gin'
 
 # import task module
-import t5x.data.tasks
+import t5x.data.p3.tasks
 
-# MODEL_DIR = "gs://t5x-test/ckpts/benchmark/base_sglue_flan_regular"
-# INITIAL_CHECKPOINT_PATH = 
 MIXTURE_OR_TASK_NAME = "t0_train"
 TASK_FEATURE_LENGTHS = {"inputs": 1024, "targets": 256}
 TRAIN_STEPS = 1_012_500

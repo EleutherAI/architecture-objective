@@ -109,7 +109,7 @@ t0_train = {
         ('gigaword', None),
         ('multi_news', None),
         ('samsum', None),
-        ('xsum', None), # https://github.com/huggingface/datasets/issues/2618
+        ('xsum', None),
         ('ag_news', None),
         ('dbpedia_14', None),
         ('trec', None)
