@@ -9,7 +9,7 @@ include 't5x/examples/t5/t5_1_1/xxl.gin'
 include 't5x/configs/runs/pretrain.gin'
 
 # import task module
-import t5x.data.tasks
+import t5x.data.c4.tasks
 
 # MODEL_DIR = "gs://t5x-test/ckpts/benchmark/xxl_c4_regular"
 MIXTURE_OR_TASK_NAME = "c4_eye_span_corruption"
@@ -18,10 +18,6 @@ TRAIN_STEPS = 500000
 DROPOUT_RATE = 0.0
 BATCH_SIZE = 2048
 SEED = 42
-
-VOCABULARY = @seqio.SentencePieceVocabulary()
-seqio.SentencePieceVocabulary.sentencepiece_model_file = "/fsx/lintangsutawika/t5-tokenizer/spiece.model"
-seqio.SentencePieceVocabulary.extra_ids = 0
 
 train_script.train:
   eval_period = 2000
