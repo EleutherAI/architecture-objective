@@ -59,6 +59,8 @@ setuptools.setup(
         't5',
         'tensorflow',
         'tensorstore >= 0.1.20',
+        'lm-eval',
+        'apache-beam[gcp]',
     ],
     extras_require={
         'gcp': [

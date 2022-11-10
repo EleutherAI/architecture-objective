@@ -6,34 +6,25 @@ import seqio
 from t5x import utils
 
 include 't5x/examples/t5/t5_1_1/base.gin'
-include 't5x/configs/runs/pretrain.gin'
+include 't5x/configs/runs/finetune.gin'
 
 # import task module
-import t5x.data.c4.tasks
+import t5x.data.bigbenchlite.tasks
 
-MIXTURE_OR_TASK_NAME = "c4_eye_span_corruption"
-TASK_FEATURE_LENGTHS = {"inputs": 512, "targets": 114}
-TRAIN_STEPS = 500000
-DROPOUT_RATE = 0.0
+MIXTURE_OR_TASK_NAME = "bigbench:bigbench_lite_v1.mix.default_vocab.0_shot.all_examples"
+TASK_FEATURE_LENGTHS = {"inputs": 512, "targets": 128}
+TRAIN_STEPS = 1_012_500
+EVAL_PERIOD = 2500
 BATCH_SIZE = 2048
 SEED = 42
 
-train_script.train:
-  eval_period = 2000
 
 train/utils.DatasetConfig:
   mixture_or_task_name = %MIXTURE_OR_TASK_NAME
   task_feature_lengths = %TASK_FEATURE_LENGTHS
   split = 'train'
   batch_size = %BATCH_SIZE
-  shuffle = %SHUFFLE_TRAIN_EXAMPLES
   seed = %SEED  # use a new seed each run/restart
   use_cached = %USE_CACHED_TASKS
   pack = True
   module = %MIXTURE_OR_TASK_MODULE
-
-utils.SaveCheckpointConfig:
-  period = 10000
-  dtype = 'float32'
-  keep = None  # keep all checkpoints
-  save_dataset = False  # don't checkpoint dataset state
