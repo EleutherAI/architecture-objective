@@ -50,6 +50,7 @@ class T5Config:
   remat_policy: str = 'none'
   scan_layers: bool = True
   param_scan_axis: int = 1
+  gptj: bool = False
 
 
 class EncoderLayer(nn.Module):
@@ -106,6 +107,63 @@ class EncoderLayer(nn.Module):
         rate=cfg.dropout_rate, broadcast_dims=(-2,))(
             y, deterministic=deterministic)
     y = y + x
+    y = with_sharding_constraint(y, ('batch', 'length', 'embed'))
+
+    if cfg.scan_layers:
+      return y, None
+    else:
+      return y
+
+
+class GPTJEncoderLayer(EncoderLayer):
+  """Transformer encoder layer."""
+
+  @nn.compact
+  def __call__(self, inputs, encoder_mask=None, deterministic=False):
+    cfg = self.config
+
+    # Relative position embedding as attention biases.
+    encoder_bias = layers.RelativePositionBiases(
+        num_buckets=32,
+        max_distance=128,
+        num_heads=cfg.num_heads,
+        dtype=cfg.dtype,
+        embedding_init=nn.initializers.variance_scaling(1.0, 'fan_avg',
+                                                        'uniform'),
+        name='relpos_bias')(inputs.shape[-2], inputs.shape[-2], True)
+
+    # Attention block.
+    assert inputs.ndim == 3
+    inputs = with_sharding_constraint(inputs, ('batch', 'length', 'embed'))
+    x = layers.LayerNorm(
+        dtype=cfg.dtype, name='pre_attention_layer_norm')(
+            inputs)
+    x = with_sharding_constraint(x, ('batch', 'length', 'embed'))
+    # [batch, length, emb_dim] -> [batch, length, emb_dim]
+    out_sa = layers.MultiHeadDotProductAttention(
+        num_heads=cfg.num_heads,
+        dtype=cfg.dtype,
+        head_dim=cfg.head_dim,
+        dropout_rate=cfg.dropout_rate,
+        name='attention')(
+            x, x, encoder_mask, encoder_bias, deterministic=deterministic)
+
+    # MLP block.
+    # [batch, length, emb_dim] -> [batch, length, emb_dim]
+    out_mlp = layers.MlpBlock(
+        intermediate_dim=cfg.mlp_dim,
+        activations=cfg.mlp_activations,
+        intermediate_dropout_rate=cfg.dropout_rate,
+        dtype=cfg.dtype,
+        name='mlp',
+    )(x, deterministic=deterministic)
+    
+    # Integrate outputs
+    y = out_sa + out_mlp
+    y = nn.Dropout(
+        rate=cfg.dropout_rate, broadcast_dims=(-2,))(
+            y, deterministic=deterministic)
+    y = y + inputs
     y = with_sharding_constraint(y, ('batch', 'length', 'embed'))
 
     if cfg.scan_layers:
@@ -207,6 +265,85 @@ class DecoderLayer(nn.Module):
       return z
 
 
+class GPTJDecoderLayer(DecoderLayer):
+  """GPT-J style Transformer decoder layer that attends to the encoder."""
+
+  @nn.compact
+  def __call__(self,
+               inputs,
+               encoded,
+               decoder_mask=None,
+               encoder_decoder_mask=None,
+               deterministic=False,
+               decode=False,
+               max_decode_length=None):
+    cfg = self.config
+
+    # Relative position embedding as attention biases.
+    l = max_decode_length if decode and max_decode_length else inputs.shape[-2]
+    decoder_bias = layers.RelativePositionBiases(
+        num_buckets=32,
+        max_distance=128,
+        num_heads=cfg.num_heads,
+        dtype=cfg.dtype,
+        embedding_init=nn.initializers.variance_scaling(1.0, 'fan_avg',
+                                                        'uniform'),
+        name='relpos_bias')(l, l, False)
+
+    inputs = with_sharding_constraint(inputs, ('batch', 'length', 'embed'))
+
+    # inputs: embedded inputs to the decoder with shape [batch, length, emb_dim]
+    x = layers.LayerNorm(
+        dtype=cfg.dtype, name='pre_self_attention_layer_norm')(
+            inputs)
+    x = with_sharding_constraint(x, ('batch', 'length', 'embed'))
+
+    # Self-attention block
+    out_sa = layers.MultiHeadDotProductAttention(
+        num_heads=cfg.num_heads,
+        dtype=cfg.dtype,
+        head_dim=cfg.head_dim,
+        dropout_rate=cfg.dropout_rate,
+        name='self_attention')(
+            x,
+            x,
+            decoder_mask,
+            decoder_bias,
+            deterministic=deterministic,
+            decode=decode)
+
+    # Encoder-Decoder block.
+    out_ca = layers.MultiHeadDotProductAttention(
+        num_heads=cfg.num_heads,
+        dtype=cfg.dtype,
+        head_dim=cfg.head_dim,
+        dropout_rate=cfg.dropout_rate,
+        name='encoder_decoder_attention')(
+            x, encoded, encoder_decoder_mask, deterministic=deterministic)
+
+    # MLP block.
+    out_mlp = layers.MlpBlock(
+        intermediate_dim=cfg.mlp_dim,
+        activations=cfg.mlp_activations,
+        intermediate_dropout_rate=cfg.dropout_rate,
+        dtype=cfg.dtype,
+        name='mlp',
+    )(x, deterministic=deterministic)
+    
+    # Integrate outputs
+    z = out_sa + out_ca + out_mlp
+    z = nn.Dropout(
+        rate=cfg.dropout_rate, broadcast_dims=(-2,))(
+            z, deterministic=deterministic)
+    z = z + inputs
+    z = with_sharding_constraint(z, ('batch', 'length', 'embed'))
+
+    if cfg.scan_layers:
+      return z, None
+    else:
+      return z
+
+
 class Encoder(nn.Module):
   """A stack of encoder layers."""
   config: T5Config
@@ -227,7 +364,7 @@ class Encoder(nn.Module):
             x, deterministic=deterministic)
     x = x.astype(cfg.dtype)
 
-    BlockLayer = EncoderLayer
+    BlockLayer = EncoderLayer if not cfg.gptj else GPTJEncoderLayer
 
     if cfg.remat_policy not in (None, 'none'):
       if cfg.remat_policy == 'minimal':
@@ -294,7 +431,7 @@ class Decoder(nn.Module):
             y, deterministic=deterministic)
     y = y.astype(cfg.dtype)
 
-    BlockLayer = DecoderLayer
+    BlockLayer = DecoderLayer if not cfg.gptj else GPTJDecoderLayer
 
     if cfg.remat_policy not in (None, 'none'):
       if cfg.remat_policy == 'minimal':
