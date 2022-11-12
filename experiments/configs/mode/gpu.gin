@@ -1,0 +1,7 @@
+from __gin__ import dynamic_registration
+
+import seqio
+
+VOCABULARY = @seqio.SentencePieceVocabulary()
+seqio.SentencePieceVocabulary.sentencepiece_model_file = "/fsx/lintangsutawika/t5-tokenizer/spiece.model"
+seqio.SentencePieceVocabulary.extra_ids = 0
