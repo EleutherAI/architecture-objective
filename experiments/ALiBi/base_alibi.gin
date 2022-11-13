@@ -1,0 +1,10 @@
+# Register necessary SeqIO Tasks/Mixtures.
+from __gin__ import dynamic_registration
+
+from t5x.examples.t5 import network
+
+include 't5x/examples/t5/t5_1_1/base.gin'
+
+network.Transformer.config = @network.T5Config()
+network.T5Config:
+  position_embedding = "alibi"
