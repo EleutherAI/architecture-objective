@@ -71,29 +71,28 @@ def pack_lm_decoder_only(dataset,
 
     @seqio.utils.map_over_dataset(num_seeds=1)
     def pack_examples(example, seed):
-        split_point = tf.random.stateless_uniform((),
-                                                minval=1,
-                                                maxval=packed_length,
-                                                seed=seed,
-                                                dtype=tf.int32)
+        # split_point = tf.random.stateless_uniform((),
+        #                                         minval=1,
+        #                                         maxval=packed_length,
+        #                                         seed=seed,
+        #                                         dtype=tf.int32)
         
         decoder_target_tokens = example['targets']
         decoder_input_tokens = seqio.utils.make_autoregressive_inputs(
             example['inputs']
             )
 
-        if loss_on_targets_only:
-            decoder_loss_weights = tf.cast(
-                tf.range(packed_length) >= split_point, tf.int32)
-        else:
-            decoder_loss_weights = tf.ones((packed_length,), dtype=tf.int32)
+        # if loss_on_targets_only:
+        #     decoder_loss_weights = tf.cast(
+        #         tf.range(packed_length) >= split_point, tf.int32)
+        # else:
+        decoder_loss_weights = tf.ones((packed_length,), dtype=tf.int32)
 
         padding_mask = tf.cast(
             tf.not_equal(decoder_target_tokens, pad_id), dtype=tf.int32)
         decoder_loss_weights *= padding_mask
 
-        decoder_causal_attention = tf.cast(
-            tf.range(packed_length) <= split_point, tf.int32)
+        decoder_causal_attention = tf.zeros((packed_length,), tf.int32)
 
         return {
             'decoder_target_tokens': decoder_target_tokens,

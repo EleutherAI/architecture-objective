@@ -64,12 +64,24 @@ class preprocessorsTest(tf.test.TestCase):
                 },
             )
 
-        # output_dataset = preprocessors.make_into_decoder_inputs(
-        #     output_dataset,
-        #     sequence_length={
-        #             'targets': 100,
-        #             'inputs': 100
-        #         },
+        output_dataset = seqio.preprocessors.append_eos_after_trim(
+            output_dataset,
+            sequence_length={
+                    'targets': 100,
+                    'inputs': 100
+                },
+            output_features={
+                    'targets': seqio.Feature(vocab),
+                    'inputs': seqio.Feature(vocab),
+                },
+            )
+
+        output_dataset = preprocessors.pack_lm_decoder_only(
+            output_dataset,
+            sequence_length={
+                    'targets': 100,
+                    'inputs': 100
+                },
             # sequence_length={
             #     'decoder_target_tokens': 100,
             #     'decoder_input_tokens': 100,
@@ -82,7 +94,7 @@ class preprocessorsTest(tf.test.TestCase):
             #     'decoder_loss_weights': seqio.Feature(vocab),
             #     'decoder_causal_attention': seqio.Feature(vocab),
             # },
-        # )
+        )
 
         # output_dataset = og_dataset
         # for _p in _process:
@@ -110,7 +122,13 @@ class preprocessorsTest(tf.test.TestCase):
             print("#### {} ###".format(key))
             print(output_sample[key])
 
-        self.assertSequenceEqual(['inputs', 'targets'], list(output_keys))
+        self.assertSequenceEqual(
+            ['decoder_target_tokens',
+            'decoder_input_tokens',
+            'decoder_loss_weights',
+            'decoder_causal_attention'],
+            list(output_keys)
+        )
 
     # def test_masked_language_modeling_passthrough(self):
     #     # No merging of examples, passthrough keys
