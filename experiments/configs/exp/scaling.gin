@@ -1,5 +1,6 @@
+TRAIN_STEPS = %gin.REQUIRED
 BATCH_SIZE = 2048
 
 utils.SaveCheckpointConfig:
-  keep = None
+  keep = 8
   period = %SAVING_PERIOD

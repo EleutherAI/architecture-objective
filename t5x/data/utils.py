@@ -2,6 +2,7 @@
 
 """Utilities for data loading and processing."""
 
+import functools
 import os
 import gin
 import seqio
@@ -9,13 +10,70 @@ import seqio
 import t5.data.utils
 import tensorflow as tf
 from typing import Iterable, Mapping, Optional, Union
+from t5x.data.vocab import DEFAULT_OUTPUT_FEATURES, DEFAULT_CLM_OUTPUT_FEATURES
 
+from t5.data import preprocessors
+
+TaskRegistry = seqio.TaskRegistry
 
 @t5.data.utils.map_over_dataset
 def extract_text_from_json_tf(json: str):
     output = tf.strings.split(json, '{"text":"', maxsplit=1)[1]
     output = tf.strings.split(output, '",', maxsplit=1)[0]
     return {"text": output}
+
+@t5.data.utils.map_over_dataset
+def extract_text_from_jsonl_tf(json: str):
+    output = tf.strings.split(json, '{"text": "', maxsplit=1)[1]
+    output = tf.strings.split(output, '",', maxsplit=1)[0]
+    return {"text": output}
+
+
+def default_mlm_task(name, split_to_filepattern, jsonl):
+    extract_text = extract_text_from_jsonl_tf if jsonl else extract_text_from_json_tf
+    TaskRegistry.add(
+        name,
+        source=CustomDataSource(
+            split_to_filepattern=split_to_filepattern,
+        ),
+        preprocessors=[
+            extract_text,
+            functools.partial(
+                preprocessors.rekey, key_map={
+                    "inputs": None,
+                    "targets": "text"
+                }),
+            seqio.preprocessors.tokenize,
+            seqio.CacheDatasetPlaceholder(),
+            preprocessors.span_corruption,
+            seqio.preprocessors.append_eos_after_trim,
+        ],
+        output_features=DEFAULT_OUTPUT_FEATURES,
+        metric_fns=[]
+    )
+
+
+def default_clm_task(name, split_to_filepattern, jsonl):
+    extract_text = extract_text_from_jsonl_tf if jsonl else extract_text_from_json_tf
+    TaskRegistry.add(
+        name,
+        source=CustomDataSource(
+            split_to_filepattern=split_to_filepattern,
+        ),
+        preprocessors=[
+            extract_text,
+            functools.partial(
+                preprocessors.rekey, key_map={
+                    "inputs": None,
+                    "targets": "text"
+                }),
+            seqio.preprocessors.tokenize,
+            seqio.CacheDatasetPlaceholder(),
+            preprocessors.full_lm,
+        ],
+        output_features=DEFAULT_CLM_OUTPUT_FEATURES,
+        metric_fns=[]
+    )
 
 
 class CustomDataSource(seqio.FileDataSource):
