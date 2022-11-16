@@ -60,6 +60,17 @@ def noise_token_to_mask_token(tokens, noise_mask, vocabulary, seeds):
                 tokens
                 )
 
+def full_lm(dataset, sequence_length, output_features):
+  """Full language modeling objective with EOS only at document boundaries."""
+  ds = dataset
+  ds = preprocessors.select_random_chunk(ds, output_features=output_features,
+                           feature_key='targets', max_length=65536)
+  ds = seqio.preprocessors.append_eos(ds, output_features)
+  ds = preprocessors.reduce_concat_tokens(ds, feature_key='targets', batch_size=128)
+  # Don't use `split_tokens_to_targets_length` since we've alrady added EOS.
+  ds = preprocessors.split_tokens(ds, max_tokens_per_segment=sequence_length['targets'])
+  return ds
+
 def pack_lm_decoder_only(dataset,
                             sequence_length,
                             loss_on_targets_only=True,
@@ -97,8 +108,8 @@ def pack_lm_decoder_only(dataset,
         return {
             'decoder_target_tokens': decoder_target_tokens,
             'decoder_input_tokens': decoder_input_tokens,
-            'decoder_loss_weights': decoder_loss_weights,
             'decoder_causal_attention': decoder_causal_attention,
+            'targets': decoder_target_tokens
         }
 
     return pack_examples(dataset)
