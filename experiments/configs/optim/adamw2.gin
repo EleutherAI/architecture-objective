@@ -1,0 +1,28 @@
+from __gin__ import dynamic_registration
+
+from t5x import optimizers
+from t5x import utils
+import optax
+
+
+LEARNING_RATE = %gin.REQUIRED
+DECAY_STEPS = %gin.REQUIRED
+
+OPTIMIZER = @optimizers.chain()
+
+optimizers.chain:
+  transformations = [@optax.clip(), @optax.adamw()]
+
+optax.clip:
+  max_delta = 1.0
+
+optax.adamw:
+  learning_rate = @utils.create_learning_rate_scheduler()
+  weight_decay = 0.01
+
+utils.create_learning_rate_scheduler:
+  factors = 'constant * linear_warmup * cosine_decay'
+  base_learning_rate = %LEARNING_RATE
+  warmup_steps = 10000
+  steps_per_cycle = %DECAY_STEPS
+  decay_factor = 0.1

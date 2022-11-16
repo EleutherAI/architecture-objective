@@ -20,3 +20,11 @@ DEFAULT_OUTPUT_FEATURES = {
             vocabulary=get_default_vocabulary(),
             add_eos=True)
 }
+
+DEFAULT_CLM_OUTPUT_FEATURES = {
+    "targets":
+        seqio.Feature(
+            vocabulary=get_default_vocabulary(),
+            add_eos=True,
+            required=False),
+}

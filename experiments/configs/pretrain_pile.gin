@@ -5,14 +5,14 @@ from t5x import partitioning
 from t5x import utils
 from t5x import trainer
 
-import t5x.data.c4.tasks
+import t5x.data.pile.tasks
 
 include 't5x/examples/scalable_t5/t5_1_1/base.gin'
 include 't5x/configs/runs/pretrain.gin'
 
 MODEL_DIR = %gin.REQUIRED
 
-MIXTURE_OR_TASK_NAME = "c4_eye_span_corruption"
+MIXTURE_OR_TASK_NAME = "pile_span_corruption"
 TASK_FEATURE_LENGTHS = {"inputs": 512, "targets": 114}
 TRAIN_STEPS = %gin.REQUIRED
 DROPOUT_RATE = 0.0

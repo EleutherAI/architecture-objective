@@ -1,1 +1,2 @@
-utils.SaveCheckpointConfig.keep = 1
+TRAIN_STEPS = %gin.REQUIRED
+BATCH_SIZE = %gin.REQUIRED

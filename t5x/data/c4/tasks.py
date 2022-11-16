@@ -20,15 +20,13 @@ import t5.data.preprocessors
 import t5x.data.preprocessors
 from t5x.data.vocab import DEFAULT_OUTPUT_FEATURES
 from t5x.data.utils import CustomDataSource, extract_text_from_json_tf
-
 from t5x.data.c4 import c4_utils
-
-TaskRegistry = seqio.TaskRegistry
+from t5x.data.utils import default_mlm_task, default_clm_task
 
 # ==================================== C4 ======================================
 # A version of c4 corresponding to one hosted on the-eye
 TaskRegistry.add(
-    'c4_eye_span_corruption',
+    '_c4_eye_span_corruption',
     source=CustomDataSource(
         split_to_filepattern=c4_utils.get_c4_files(),
     ),
@@ -49,7 +47,7 @@ TaskRegistry.add(
 )
 
 TaskRegistry.add(
-    'c4_fcm_causal_decoder_architecture',
+    '_c4_fcm_causal_decoder_architecture',
     source=CustomDataSource(
         split_to_filepattern=c4_utils.get_c4_files(),
     ),
@@ -78,3 +76,8 @@ TaskRegistry.add(
     },
     metric_fns=[]
 )
+
+c4_files = c4_utils.get_c4_files()
+
+default_mlm_task('c4_eye_span_corruption', c4_files, jsonl=False)
+default_clm_task('c4_eye_full_lm', c4_files, jsonl=False)
