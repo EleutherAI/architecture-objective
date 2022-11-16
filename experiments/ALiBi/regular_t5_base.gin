@@ -15,8 +15,8 @@ import t5x.data.c4.tasks
 # MODEL_DIR = "gs://t5x-test/ckpts/benchmark/base_c4_regular_alibi"
 MIXTURE_OR_TASK_NAME = "c4_eye_span_corruption"
 TASK_FEATURE_LENGTHS = {"inputs": 512, "targets": 114}
-TRAIN_STEPS = 10000
-DROPOUT_RATE = 0.0
+TRAIN_STEPS = 1000000
+DROPOUT_RATE = 0.1
 BATCH_SIZE = 2048
 SEED = 42
 
@@ -35,7 +35,7 @@ train/utils.DatasetConfig:
   module = %MIXTURE_OR_TASK_MODULE
 
 utils.SaveCheckpointConfig:
-  period = 10000
+  period = 10_000
   dtype = 'float32'
   keep = None  # keep all checkpoints
   save_dataset = False  # don't checkpoint dataset state
