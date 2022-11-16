@@ -67,7 +67,12 @@ def create_task_from_tuples(data, vocab):
       return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
     for p in data:
-      input, target = p
+      if len(p) == 1:
+        input, *_ = p
+        target = input
+      else:
+        input, target = p
+
       input, target = input.encode('utf-8'), target.encode('utf-8')
       example = tf.train.Example(features=tf.train.Features(feature={
         'input': _bytes_feature(input),
@@ -250,7 +255,9 @@ def eval_task(active_tasks, output_path, create_task_func, infer_func):
         raise Exception("unimplemented")
 
     def loglikelihood_rolling(self, requests):
-        raise Exception("unimplemented")
+        task_name = create_task_func(requests)
+        return np.array(infer_func(task_name = task_name, mode = 'score'))
+        # raise Exception("unimplemented")
 
     def __init__(self):
         super().__init__()
