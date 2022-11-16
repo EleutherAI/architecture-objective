@@ -53,7 +53,7 @@ TaskRegistry.add(
     output_features={
         "decoder_target_tokens": seqio.Feature(vocabulary=get_default_vocabulary(), add_eos=False),
         "decoder_input_tokens": seqio.Feature(vocabulary=get_default_vocabulary(), add_eos=False),
-        "decoder_causal_attention": seqio.Feature(vocabulary=get_default_vocabulary(), add_eos=False),
+        "decoder_causal_attention": seqio.Feature(vocabulary=seqio.PassThroughVocabulary(1), add_eos=False),
         # All but the last stage of the preprocessing uses "targets" as the key,
         # so this output feature is necessary. It is not marked required because
         # the final preprocessor drops it.
