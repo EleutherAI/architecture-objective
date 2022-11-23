@@ -2,7 +2,8 @@ import gin
 import seqio
 import tensorflow.compat.v2 as tf
 
-from t5.data import preprocessors
+# from t5.data import preprocessors
+import t5.data
 
 
 def masked_language_modeling(
@@ -12,22 +13,22 @@ def masked_language_modeling(
     ):
     """MLM Objective"""
     ds = dataset
-    ds = preprocessors.select_random_chunk(
+    ds = t5.data.preprocessors.select_random_chunk(
         ds,
         output_features=output_features,
         feature_key='targets',
         max_length=65536)
-    ds = preprocessors.reduce_concat_tokens(
+    ds = t5.data.preprocessors.reduce_concat_tokens(
         ds,
         feature_key='targets',
         batch_size=128)
-    ds =  preprocessors.split_tokens(
+    ds = t5.data.preprocessors.split_tokens(
         ds,
         feature_key='targets',
         min_tokens_per_segment=None,
         max_tokens_per_segment=sequence_length['targets']
         )
-    ds = preprocessors.denoise(
+    ds = t5.data.preprocessors.denoise(
         ds,
         output_features,
         inputs_fn=noise_token_to_mask_token,
@@ -63,12 +64,12 @@ def noise_token_to_mask_token(tokens, noise_mask, vocabulary, seeds):
 def full_lm(dataset, sequence_length, output_features):
   """Full language modeling objective with EOS only at document boundaries."""
   ds = dataset
-  ds = preprocessors.select_random_chunk(ds, output_features=output_features,
+  ds = t5.data.preprocessors.select_random_chunk(ds, output_features=output_features,
                            feature_key='targets', max_length=65536)
   ds = seqio.preprocessors.append_eos(ds, output_features)
-  ds = preprocessors.reduce_concat_tokens(ds, feature_key='targets', batch_size=128)
+  ds = t5.data.preprocessors.reduce_concat_tokens(ds, feature_key='targets', batch_size=128)
   # Don't use `split_tokens_to_targets_length` since we've alrady added EOS.
-  ds = preprocessors.split_tokens(ds, max_tokens_per_segment=sequence_length['targets'])
+  ds = t5.data.preprocessors.split_tokens(ds, max_tokens_per_segment=sequence_length['targets'])
   return ds
 
 def pack_lm_decoder_only(dataset,
