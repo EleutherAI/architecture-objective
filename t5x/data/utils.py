@@ -77,6 +77,40 @@ def default_clm_task(name, split_to_filepattern, jsonl):
     )
 
 
+def make_fcm_task(name, split_to_filepattern, jsonl):
+    extract_text = extract_text_from_jsonl_tf if jsonl else extract_text_from_json_tf
+    TaskRegistry.add(
+        name,
+        source=CustomDataSource(
+            split_to_filepattern=split_to_filepattern
+        ),
+        preprocessors=[
+            extract_text,
+            functools.partial(
+                seqio.preprocessors.rekey, key_map={
+                    "inputs": None,
+                    "targets": "text"
+                }),
+            seqio.preprocessors.tokenize,
+            seqio.CacheDatasetPlaceholder(),
+            preprocessors.masked_language_modeling,
+            seqio.preprocessors.append_eos_after_trim,
+            preprocessors.pack_lm_decoder_only,
+        ],
+        output_features={
+            "decoder_target_tokens": seqio.Feature(vocabulary=get_default_vocabulary(), add_eos=False),
+            "decoder_input_tokens": seqio.Feature(vocabulary=get_default_vocabulary(), add_eos=False),
+            "decoder_causal_attention": seqio.Feature(vocabulary=seqio.PassThroughVocabulary(1), add_eos=False),
+            # All but the last stage of the preprocessing uses "targets" as the key,
+            # so this output feature is necessary. It is not marked required because
+            # the final preprocessor drops it.
+            "targets": seqio.Feature(vocabulary=get_default_vocabulary(), required=False),
+        },
+        metric_fns=[]
+    )
+
+
+
 class CustomDataSource(seqio.FileDataSource):
     """A `FileDataSource` that reads lines of text from a file as input and takes in _TFDS_DATA_DIR_OVERRIDE"""
 
